@@ -2,7 +2,9 @@ name: VPN Gate Node Check
 
 on:
   workflow_dispatch:
- 
+  schedule:
+    # 每 30 分钟自动运行一次（UTC 时间）
+    - cron: '*/30 * * * *'
 
 permissions:
   contents: read
@@ -32,26 +34,27 @@ jobs:
       - name: Get VPN Gate nodes + check via Cloudflare Worker + build page
         run: python vpngate.py
         env:
-          # 已部署的检测 Worker (不要改动: 检测统一走这里)
+          # 检测 Worker 地址，需在仓库 Secrets 中设置 DOMAIN
           CHECK_WORKER: ${{ secrets.DOMAIN }}
           CHECK_CONCURRENCY: "32"
           CHECK_TIMEOUT: "90"
 
-      - name: Ensure GitHub Pages is enabled (one-time auto setup)
+      - name: Enable GitHub Pages (first run only)
         run: |
           code=$(curl -s -o /dev/null -w '%{http_code}' \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
             "https://api.github.com/repos/$GITHUB_REPOSITORY/pages")
-          echo "Pages API status: $code"
           if [ "$code" = "404" ]; then
-            echo "首次运行: 启用 GitHub Pages (source = GitHub Actions, 目录 /public)"
+            echo "首次运行：启用 GitHub Pages (source = GitHub Actions)"
             curl -sS -X PUT \
               -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
               -H "Content-Type: application/json" \
-              -d '{"build_type":"workflow","source":{"branches":["main"],"path":"/public"}}' \
+              -d '{"build_type":"workflow"}' \
               "https://api.github.com/repos/$GITHUB_REPOSITORY/pages"
-            echo
             sleep 10
+          else
+            echo "GitHub Pages 已启用，状态码: $code"
           fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -69,4 +72,4 @@ jobs:
         uses: actions/deploy-pages@v4
 
       - name: Show site URL
-        run: 'echo "site: https://仓库用户名.github.io/gate/ (deploy outcome: ${{ steps.deployment.outcome }})"'
+        run: echo "site: ${{ steps.deployment.outputs.page_url }}"
